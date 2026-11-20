@@ -62,7 +62,7 @@ helpers="$framework/Versions/Current"
 "${sign[@]}" --identifier local.drifttile.desktop "$app"
 codesign --verify --deep --strict "$app"
 if [[ "$release" == 1 ]]; then
-    codesign --verify -R 'anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app"
+    codesign --verify -R '=anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app"
 fi
 ditto "$app" "$destination/TouchTiles.app"
 codesign --verify --deep --strict "$destination/TouchTiles.app"

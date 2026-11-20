@@ -14,6 +14,7 @@
     <key>SUFeedURL</key><string>https://github.com/mmmeff/TouchTiles/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key><string>ZFJvHdpn+WKhJYS+J7kHBJhI0KLK+4cNQhCjsFVUpto=</string>
     <key>SURequireSignedFeed</key><true/>
+    <key>SUSignedFeedFailureExpirationInterval</key><integer>0</integer>
     <key>SUVerifyUpdateBeforeExtraction</key><true/>
     <key>SUEnableAutomaticChecks</key><true/>
     <key>SUAutomaticallyUpdate</key><true/>
