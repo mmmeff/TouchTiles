@@ -46,6 +46,9 @@ unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD keychain_password
 xcrun notarytool store-credentials touchtiles-notary --keychain "$keychain" \
     --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID"
 unset APPLE_ID APPLE_PASSWORD
+# The temporary keychain remains inside a mode-0700 directory. The shipped
+# bundle must be traversable by every user who opens it from /Applications.
+umask 022
 
 notarize() {
     xcrun notarytool submit "$1" --keychain "$keychain" --keychain-profile touchtiles-notary \
