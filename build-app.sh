@@ -36,9 +36,14 @@ install -m 644 "$project/Resources/Info.plist" "$app/Contents/Info.plist"
 ditto "$sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$framework"
 install -m 644 "$sparkle/LICENSE" "$app/Contents/Resources/Sparkle-LICENSE.txt"
 if [[ ${TOUCHTILES_UNIVERSAL:-0} == 1 ]]; then
-    for arch in arm64 x86_64; do
-        lipo -verify_arch "$arch" "$app/Contents/MacOS/TouchTiles"
-        lipo -verify_arch "$arch" "$framework/Sparkle"
+    for binary in "$app/Contents/MacOS/TouchTiles" "$framework/Sparkle"; do
+        architectures=$(lipo -archs "$binary")
+        for arch in arm64 x86_64; do
+            if [[ " $architectures " != *" $arch "* ]]; then
+                printf '%s is missing %s (contains %s)\n' "$binary" "$arch" "$architectures" >&2
+                exit 1
+            fi
+        done
     done
 fi
 sips -s format png "$project/Resources/TouchTiles.svg" --out "$stage/icon.png" >/dev/null
