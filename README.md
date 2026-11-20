@@ -4,9 +4,13 @@ TouchTiles is a native Mac menu bar app for Omarchy-style Dwindle tiling. Each d
 
 ## Set up the app
 
-1. Clone this repository and run `./build-app.sh` from its root. Move `dist/TouchTiles.app` to Applications and open it. The split-rectangle icon opens the menu. Tiling starts off on the first launch.
+1. Download the universal DMG from the [latest GitHub release](https://github.com/mmmeff/TouchTiles/releases/latest), open it, and drag `TouchTiles.app` into Applications. Open TouchTiles and click the split-rectangle menu bar icon. Tiling starts off on the first launch.
 2. Open **Settings → Desktop → Grant access**. On macOS 27 the privacy pane is called **Device Control and Data Access**. Earlier releases call it **Accessibility**. Enable the installed app, confirm TouchTiles says **Allowed**, then turn on **Automatic tiling**. If the trackpad status reports blocked input, allow TouchTiles under **Input Monitoring** and reopen it.
 3. To launch with your Mac, turn on **Open at login**. If macOS asks for approval, follow **Approve TouchTiles in Login Items**. TouchTiles remembers whether tiling was on when you quit.
+
+## Get updates
+
+TouchTiles checks for updates every four hours. Sparkle verifies the update feed and download, stages the update, and installs it when you quit or choose to restart. Choose **Check for Updates…** in the menu bar to check now, or turn off **Automatically Check for Updates** to check manually. If you have TouchTiles 1.7 or earlier, quit it and install the DMG once to get the updater. Your tiling preferences and shortcuts carry over. macOS may ask you to grant Accessibility or Screen Recording again when moving from a locally signed build to the Developer ID release.
 
 ## Use the controls
 
@@ -49,7 +53,7 @@ TouchTiles claims matching trackpad streams while tiling is active. It leaves sy
 
 ## Build and test
 
-TouchTiles targets macOS 13 or later. To build for your Mac, use Xcode 15 or later with Swift 5.9 or later. The package has no external dependencies.
+TouchTiles targets macOS 13 or later. To build for your Mac, use Xcode 15 or later with Swift 5.9 or later. Swift Package Manager fetches the pinned Sparkle updater.
 
 ```sh
 ./build-app.sh
@@ -61,3 +65,20 @@ The script writes `dist/TouchTiles.app` and signs it locally. Set `TOUCHTILES_SI
 To exercise real windows, run `./Integration/test-windows.sh` in a logged-in session from an Accessibility-authorized terminal. The fixture opens disposable windows, including windows that enforce minimum sizes. Its window manager filters the inventory to the fixture processes before making Accessibility calls.
 
 Window identity, Space IDs, and raw multitouch contacts use dynamically resolved private macOS interfaces. An OS update can change those interfaces. The tests exercise layout geometry, shortcut validation, gesture recognition, and the window lifecycle. Finger recognition and arbitration with the Dock still need a physical gesture check on each supported macOS release.
+
+## Publish a release
+
+GitHub Actions tests pull requests and builds for Apple silicon and Intel. A passing push to `main` publishes a signed release when the repository’s release secrets are configured. A `feat:` commit bumps the minor version, `#major` or a breaking conventional commit bumps the major version, and other changes bump the patch version. Use `#norelease` in the head commit’s subject to skip publication. To retry a release, run **Actions → Release → Run workflow** on `main`.
+
+Configure the signing credentials under **Settings → Secrets and variables → Actions**.
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application certificate and private key in PKCS#12 format |
+| `APPLE_CERTIFICATE_PASSWORD` | Passphrase for the PKCS#12 file |
+| `APPLE_SIGNING_IDENTITY` | Full Developer ID Application certificate name |
+| `APPLE_TEAM_ID` | Apple Developer team ID |
+| `APPLE_ID` and `APPLE_PASSWORD` | Notarization account and its app-specific password |
+| `SPARKLE_PRIVATE_KEY` | TouchTiles’ Ed25519 update-signing key, paired with `SUPublicEDKey` in `Resources/Info.plist` |
+
+The job signs the app and its helpers, notarizes and staples the app and DMG, then verifies and publishes the installer, update ZIP, and signed `appcast.xml` together. Installed copies read that feed from the latest GitHub release. Keep the matching update key backed up in Keychain or your release secrets manager.

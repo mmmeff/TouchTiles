@@ -1,0 +1,32 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Run unit tests
+        run: swift test --force-resolved-versions --skip LiveWindowTests
+      - name: Build a universal app
+        env:
+          TOUCHTILES_UNIVERSAL: "1"
+          TOUCHTILES_BUILD_DIR: ${{ runner.temp }}/touchtiles-build
+        run: ./build-app.sh "$RUNNER_TEMP/dist"
+
+  release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      source: ${{ github.sha }}
+    secrets: inherit

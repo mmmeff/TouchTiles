@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, or leave blank to release main
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      source:
+        description: Tested commit on main
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-macos-release
+  cancel-in-progress: false
+
+jobs:
+  credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          AUTOMATIC: ${{ inputs.source != '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID != '' }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD != '' }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        run: |
+          missing=()
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID SPARKLE_PRIVATE_KEY; do
+            if [[ ${!name} != true ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} )); then
+            echo "Release requires these Actions secrets: ${missing[*]}" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            [[ "$AUTOMATIC" == true ]] || exit 1
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: credentials
+    if: needs.credentials.outputs.ready == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || inputs.source || github.sha }}
+          fetch-depth: 0
+      - name: Select release version
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+          AUTOMATIC: ${{ inputs.source != '' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 scripts/release.py plan
+      - name: Test release checkout
+        if: steps.plan.outputs.tag != '' && inputs.source == ''
+        run: swift test --force-resolved-versions --skip LiveWindowTests
+      - name: Sign, notarize and package
+        if: steps.plan.outputs.tag != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: ./scripts/build-release.sh "$RUNNER_TEMP/release"
+      - name: Publish signed assets together
+        if: steps.plan.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.plan.outputs.source }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+          REQUEST_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+        run: python3 scripts/release.py publish "$RUNNER_TEMP/release"

@@ -1,10 +1,13 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, SPUStandardUserDriverDelegate {
     private let state = AppState()
     private var item: NSStatusItem?
     private var settings: NSWindow?
+    private var updates: SPUStandardUpdaterController?
+    private var availableVersion: String?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -13,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let menu = NSMenu()
         menu.delegate = self
         status.menu = menu
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            updates = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: self)
+        }
         state.onAppearanceChange = { [weak self] in self?.updateIcon() }
         updateIcon()
         let workspace = NSWorkspace.shared.notificationCenter
@@ -35,10 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func updateIcon() {
         let symbol = state.enabled ? "rectangle.split.2x1.fill" : "rectangle.split.2x1"
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "TouchTiles")
+        let image = NSImage(systemSymbolName: availableVersion == nil ? symbol : "arrow.down.circle.fill",
+                            accessibilityDescription: "TouchTiles")
         image?.isTemplate = true
         item?.button?.image = image
-        item?.button?.toolTip = state.enabled ? "TouchTiles · Tiling on" : "TouchTiles · Tiling off"
+        item?.button?.toolTip = availableVersion.map { "TouchTiles \($0) available" }
+            ?? (state.enabled ? "TouchTiles · Tiling on" : "TouchTiles · Tiling off")
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -61,7 +69,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             add("Review Setup…", #selector(showSettings))
         }
         add("Settings…", #selector(showSettings))
+        if let updates {
+            let title = availableVersion.map { "Review Update to \($0)…" } ?? "Check for Updates…"
+            add(title, #selector(checkForUpdates), enabled: updates.updater.canCheckForUpdates)
+            add("Automatically Check for Updates", #selector(toggleAutomaticUpdates))
+            menu.items.last?.state = updates.updater.automaticallyChecksForUpdates ? .on : .off
+        }
         add("Quit TouchTiles", #selector(quit))
+    }
+
+    @objc private func checkForUpdates() { updates?.checkForUpdates(nil) }
+
+    @objc private func toggleAutomaticUpdates() {
+        updates?.updater.automaticallyChecksForUpdates.toggle()
+    }
+
+    var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem,
+                                                   state: SPUUserUpdateState) {
+        if !state.userInitiated {
+            availableVersion = update.displayVersionString
+            updateIcon()
+        }
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        availableVersion = nil
+        updateIcon()
     }
 
     @objc private func toggle() {
@@ -104,12 +139,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         state.shutdown()
-        guard state.restorationPending else { return .terminateNow }
-        Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
-            guard self?.state.restorationPending != true else { return }
-            timer.invalidate()
+        return Self.terminationReply(restorationPending: { self.state.restorationPending }) {
             sender.reply(toApplicationShouldTerminate: true)
         }
+    }
+
+    static func terminationReply(restorationPending: @escaping () -> Bool,
+                                 reply: @escaping () -> Void) -> NSApplication.TerminateReply {
+        guard restorationPending() else { return .terminateNow }
+        let timer = Timer(timeInterval: 0.2, repeats: true) { timer in
+            guard !restorationPending() else { return }
+            timer.invalidate()
+            reply()
+        }
+        // AppKit waits for a deferred quit in modal-panel mode.
+        RunLoop.main.add(timer, forMode: .modalPanel)
         return .terminateLater
     }
 }
